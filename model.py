@@ -240,7 +240,7 @@ class UnifiedDCGAN(object):
     def get_next_batch_one_epoch(self, num_batches, config):
         """Yields next mini-batch within one epoch.
         """
-        for idx in xrange(0, num_batches):
+        for idx in range(0, num_batches):
             batch_z = np.random.uniform(-1, 1, [config.batch_size, self.z_dim]).astype(np.float32)
 
             if config.dataset == 'mnist':
@@ -393,7 +393,7 @@ class UnifiedDCGAN(object):
 
         inf_data_gen = self.inf_get_next_batch(config)
 
-        for iter_count in xrange(config.max_iter):
+        for iter_count in range(config.max_iter):
             if self.model_type == self.GAN:
                 _d_iters = 1
             else:
@@ -406,7 +406,7 @@ class UnifiedDCGAN(object):
             counter += _d_iters
             d_counter += _d_iters
             for _ in range(_d_iters):
-                epoch, step, d_train_feed_dict, g_train_feed_dict = inf_data_gen.next()
+                epoch, step, d_train_feed_dict, g_train_feed_dict = next(inf_data_gen)
                 self.sess.run(d_optim, feed_dict=d_train_feed_dict)
                 if d_clip is not None:
                     self.sess.run(d_clip)
