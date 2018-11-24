@@ -20,6 +20,11 @@ class UnifiedDCGAN(object):
     WGAN = "WGAN"
     WGAN_GP = "WGAN_GP"
 
+    
+    ############################################################################
+    ## INITIALIZE DCGAN
+    ############################################################################
+     
     def __init__(self, sess, model_type,
                  input_height=108, input_width=108, crop=True,
                  batch_size=64, sample_num=64,
@@ -65,6 +70,8 @@ class UnifiedDCGAN(object):
             checkpoint_dir (str): Folder name to save the model checkpoints.
             sample_dir (str): Folder name to save the sample images.
         """
+        
+        # raise error if given model-type is unknown
         if model_type not in (self.GAN, self.WGAN, self.WGAN_GP):
             raise ValueError("Unknown model_type: '%s'.", model_type)
 
@@ -89,6 +96,7 @@ class UnifiedDCGAN(object):
         self.gfc_dim = gfc_dim
         self.dfc_dim = dfc_dim
 
+        # take the absolute float value of d_clip_limit
         self.d_clip_limit = math.fabs(d_clip_limit)
         self.d_iter = d_iter
         self.l1_regularizer_scale = l1_regularizer_scale
@@ -97,6 +105,7 @@ class UnifiedDCGAN(object):
         self.dataset_name = dataset_name
         self.input_fname_pattern = input_fname_pattern
 
+        # create model directory in checkpoint directory and sample directory if not existent
         self.checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
         if not os.path.exists(self.checkpoint_dir):
             os.makedirs(self.checkpoint_dir)
@@ -105,16 +114,23 @@ class UnifiedDCGAN(object):
         if not os.path.exists(self.sample_dir):
             os.mkdir(self.sample_dir)
 
+        # load data and build model
         self.load_dataset()
         self.build_model()
 
+        
+    ############################################################################
+    ## LOAD DATA
+    ############################################################################
+    
     def load_dataset(self):
         """
         Load data and check the channel number `c_dim`.
         """
+        # for mnist data use the function
         if self.dataset_name == 'mnist':
-            self.data_X, self.data_y = load_mnist(self.y_dim)
-            self.c_dim = self.data_X[0].shape[-1]
+            self.data_X, self.data_y = load_mnist(self.y_dim) # load_mnist() imported from utils.py
+            self.c_dim = self.data_X[0].shape[-1] # self.data_X[0] is first image, .shape[-1] is the dim of each element of the image
         else:
             self.data = glob(os.path.join("./data", self.dataset_name, self.input_fname_pattern))
             imreadImg = imread(self.data[0])
@@ -127,6 +143,11 @@ class UnifiedDCGAN(object):
 
         self.grayscale = (self.c_dim == 1)
 
+        
+    ############################################################################
+    ## BUILD MODEL
+    ############################################################################
+    
     def build_model(self):
         if self.y_dim:
             self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
@@ -165,7 +186,9 @@ class UnifiedDCGAN(object):
 
         self.G = self.generator(self.z, self.y)
         self.sampler = self.sampler(self.z, self.y)
+        # Output Discriminator of real images
         self.D, self.D_logits = self.discriminator(inputs, self.y, reuse=False)
+        # Output Discriminator of fake images
         self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)
 
         self.d_sum = tf.summary.histogram("d", self.D)
@@ -191,8 +214,9 @@ class UnifiedDCGAN(object):
             # Define the loss function for Wasserstein GAN.
             self.d_loss_real = tf.reduce_mean(self.D_logits)
             self.d_loss_fake = tf.reduce_mean(self.D_logits_)
+            # Loss Discriminator
             self.d_loss = tf.reduce_mean(self.D_logits_) - tf.reduce_mean(self.D_logits)
-
+            # Loss Generator
             self.g_loss = - tf.reduce_mean(self.D_logits_)
 
             if self.model_type == self.WGAN_GP:
@@ -237,6 +261,11 @@ class UnifiedDCGAN(object):
 
         self.saver = tf.train.Saver()
 
+        
+    ############################################################################
+    ## GET NEXT BATCH
+    ############################################################################
+    
     def get_next_batch_one_epoch(self, num_batches, config):
         """Yields next mini-batch within one epoch.
         """
@@ -271,6 +300,11 @@ class UnifiedDCGAN(object):
 
             yield idx, d_train_feed_dict, g_train_feed_dict
 
+            
+    ############################################################################
+    ## LOOPING THROUGH BATCHES
+    ############################################################################
+    
     def inf_get_next_batch(self, config):
         """Loop through batches for infinite epoches.
         """
@@ -287,6 +321,11 @@ class UnifiedDCGAN(object):
                     self.get_next_batch_one_epoch(num_batches, config):
                 yield epoch, step, d_train_feed_dict, g_train_feed_dict
 
+                
+    ############################################################################
+    ## GET SAMPLE DATA
+    ############################################################################
+    
     def get_sample_data(self, config):
         """Set up the inputs and labels of sample images.
         Samples are created periodically during training.
@@ -320,6 +359,11 @@ class UnifiedDCGAN(object):
 
         return sample_feed_dict
 
+    
+    ############################################################################
+    ## TRAINING
+    ############################################################################
+    
     def train(self, config):
         """Train the model!
         """
@@ -439,6 +483,11 @@ class UnifiedDCGAN(object):
                 # Save the model.
                 self.save(counter)
 
+    
+    ############################################################################
+    ## DISCRIMINATOR
+    ############################################################################
+    
     def discriminator(self, image, y=None, reuse=False):
         """Defines the D network structure.
         """
@@ -472,10 +521,16 @@ class UnifiedDCGAN(object):
 
                 return tf.nn.sigmoid(h3), h3
 
+    
+    ############################################################################
+    ## GENERATOR
+    ############################################################################
+    
     def generator(self, z, y=None):
         """Defines the G network structure.
         """
         with tf.variable_scope("generator") as scope:
+
             if not self.y_dim:
                 s_h, s_w = self.output_height, self.output_width
                 s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
@@ -533,7 +588,12 @@ class UnifiedDCGAN(object):
 
                 return tf.nn.sigmoid(
                     deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
-
+            
+    
+    ############################################################################
+    ## SAMPLER
+    ############################################################################
+    
     def sampler(self, z, y=None):
         """TODO: merge this with self.generator()?
         """
@@ -588,6 +648,11 @@ class UnifiedDCGAN(object):
 
                 return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
+            
+    ############################################################################
+    ## PROPERTIES
+    ############################################################################
+    
     @property
     def model_dir(self):
         return "{}_{}_{}_{}_{}".format(
