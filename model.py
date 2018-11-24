@@ -15,9 +15,10 @@ from utils import (get_image, image_manifold_size, imread, load_mnist, save_imag
 
 
 class UnifiedDCGAN(object):
-    # Three model types to choose from.
+    # Four model types to choose from.
     GAN = "GAN"
     WGAN = "WGAN"
+    cWGAN = "cWGAN"
     WGAN_GP = "WGAN_GP"
 
     
@@ -34,7 +35,7 @@ class UnifiedDCGAN(object):
                  d_clip_limit=0.01, d_iter=5, gp_lambda=10.,
                  l1_regularizer_scale=None,
                  dataset_name='default', input_fname_pattern='*.png',
-                 checkpoint_dir=None, sample_dir=None):
+                 checkpoint_dir=None, sample_dir=None, v_exist=False):
         """
         Construct a model object.
 
@@ -69,10 +70,12 @@ class UnifiedDCGAN(object):
             input_fname_pattern (str): Regex for matching the image file names.
             checkpoint_dir (str): Folder name to save the model checkpoints.
             sample_dir (str): Folder name to save the sample images.
+            
+            v_exist(bool): conditional Wasserstein GAN with snippet v.
         """
         
         # raise error if given model-type is unknown
-        if model_type not in (self.GAN, self.WGAN, self.WGAN_GP):
+        if model_type not in (self.GAN, self.WGAN, self.WGAN_GP, self.cWGAN):
             raise ValueError("Unknown model_type: '%s'.", model_type)
 
         self.model_type = model_type
@@ -89,6 +92,8 @@ class UnifiedDCGAN(object):
 
         self.y_dim = y_dim
         self.z_dim = z_dim
+
+        self.v_exist = v_exist
 
         self.gf_dim = gf_dim
         self.df_dim = df_dim
@@ -130,6 +135,7 @@ class UnifiedDCGAN(object):
         # for mnist data use the function
         if self.dataset_name == 'mnist':
             self.data_X, self.data_y = load_mnist(self.y_dim) # load_mnist() imported from utils.py
+            self.data_v=self.data_X[:,:,11] # extract 10th column of each image
             self.c_dim = self.data_X[0].shape[-1] # self.data_X[0] is first image, .shape[-1] is the dim of each element of the image
         else:
             self.data = glob(os.path.join("./data", self.dataset_name, self.input_fname_pattern))
@@ -154,6 +160,12 @@ class UnifiedDCGAN(object):
         else:
             self.y = None
 
+        # if a conditional variable is used insert placeholder
+        if self.v_exist:
+            self.v = tf.placeholder(tf.float32, [self.batch_size, 28,1], name='v')
+        else:
+            self.v = None
+            
         if self.crop:
             image_dims = [self.output_height, self.output_width, self.c_dim]
         else:
@@ -184,12 +196,12 @@ class UnifiedDCGAN(object):
         self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z')
         self.z_sum = tf.summary.histogram("z", self.z)
 
-        self.G = self.generator(self.z, self.y)
-        self.sampler = self.sampler(self.z, self.y)
+        self.G = self.generator(self.z, self.y, self.v)
+        self.sampler = self.sampler(self.z, self.y, self.v)
         # Output Discriminator of real images
-        self.D, self.D_logits = self.discriminator(inputs, self.y, reuse=False)
+        self.D, self.D_logits = self.discriminator(inputs, self.y, self.v, reuse=False)
         # Output Discriminator of fake images
-        self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)
+        self.D_, self.D_logits_ = self.discriminator(self.G, self.y, self.v, reuse=True)
 
         self.d_sum = tf.summary.histogram("d", self.D)
         self.d__sum = tf.summary.histogram("d_", self.D_)
@@ -223,7 +235,7 @@ class UnifiedDCGAN(object):
                 # Wasserstein GAN with gradient penalty
                 epsilon = tf.random_uniform([self.batch_size, 1, 1, 1], 0.0, 1.0)
                 interpolated = epsilon * inputs + (1 - epsilon) * self.G
-                _, self.D_logits_intp_ = self.discriminator(interpolated, self.y, reuse=True)
+                _, self.D_logits_intp_ = self.discriminator(interpolated, self.y, self.v, reuse=True)
 
                 # tf.gradients returns a list of sum(dy/dx) for each x in xs.
                 gradients = tf.gradients(self.D_logits_intp_, [interpolated, ], name="D_logits_intp")[0]
@@ -275,10 +287,18 @@ class UnifiedDCGAN(object):
             if config.dataset == 'mnist':
                 batch_images = self.data_X[idx * config.batch_size:(idx + 1) * config.batch_size]
                 batch_labels = self.data_y[idx * config.batch_size:(idx + 1) * config.batch_size]
+                batch_snippets = self.data_v[idx * config.batch_size:(idx + 1) * config.batch_size]
 
-                d_train_feed_dict = {self.inputs: batch_images, self.z: batch_z, self.y: batch_labels}
-                g_train_feed_dict = {self.z: batch_z, self.y: batch_labels}
+                d_train_feed_dict = {self.inputs: batch_images, self.z: batch_z, self.y: batch_labels,}
+                
+                if self.model_type == self.cWGAN:
+                    d_train_feed_dict.update({self.v: batch_snippets})
+                
+                g_train_feed_dict = {self.z: batch_z, self.y: batch_labels,}
 
+                if self.model_type == self.cWGAN:
+                    g_train_feed_dict.update({self.v: batch_snippets})
+                    
             else:
                 batch_files = self.data[idx * config.batch_size:(idx + 1) * config.batch_size]
                 batch = [get_image(
@@ -333,6 +353,7 @@ class UnifiedDCGAN(object):
         if config.dataset == 'mnist':
             sample_inputs = self.data_X[0:self.sample_num]
             sample_labels = self.data_y[0:self.sample_num]
+            sample_snippets = self.data_v[0:self.sample_num]
         else:
             sample_files = self.data[0:self.sample_num]
             sample = [
@@ -355,7 +376,10 @@ class UnifiedDCGAN(object):
         }
 
         if config.dataset == 'mnist':
-            sample_feed_dict.update({self.y: sample_labels})
+            sample_feed_dict.update({self.y: sample_labels,})
+            
+            if self.model_type == self.cWGAN:
+                    sample_feed_dict.update({self.v: sample_snippets})
 
         return sample_feed_dict
 
@@ -377,7 +401,7 @@ class UnifiedDCGAN(object):
             g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
                 .minimize(self.g_loss, var_list=self.g_vars)
 
-        elif self.model_type == self.WGAN:
+        elif self.model_type in (self.WGAN, self.cWGAN):
             # Wasserstein GAN
             d_optim = tf.train.RMSPropOptimizer(config.learning_rate) \
                 .minimize(self.d_loss, var_list=self.d_vars)
@@ -401,7 +425,7 @@ class UnifiedDCGAN(object):
         g_sum_list = [self.z_sum, self.d__sum, self.G_sum, self.g_loss_sum, self.d_loss_fake_sum]
         d_sum_list = [self.z_sum, self.d_sum, self.inputs_sum, self.d_loss_sum, self.d_loss_real_sum]
 
-        if self.model_type in (self.WGAN, self.WGAN_GP) and self.l1_regularizer_scale is not None:
+        if self.model_type in (self.cWGAN, self.WGAN, self.WGAN_GP) and self.l1_regularizer_scale is not None:
             g_sum_list += [self.reg_summ]
             d_sum_list += [self.reg_summ]
 
@@ -441,7 +465,7 @@ class UnifiedDCGAN(object):
             if self.model_type == self.GAN:
                 _d_iters = 1
             else:
-                # For WGAN or WGAN_GP model, we are allowed to train the D network to be very good at
+                # For cWGAN, WGAN or WGAN_GP model, we are allowed to train the D network to be very good at
                 # the beginning as a warm start. Because theoretically Wasserstain distance does not
                 # suffer the vanishing gradient dilemma that vanila GAN is facing.
                 _d_iters = 100 if iter_count < 25 or np.mod(iter_count, 500) == 0 else self.d_iter
@@ -488,13 +512,18 @@ class UnifiedDCGAN(object):
     ## DISCRIMINATOR
     ############################################################################
     
-    def discriminator(self, image, y=None, reuse=False):
+    def discriminator(self, image, y=None, v=None, reuse=False):
         """Defines the D network structure.
         """
         with tf.variable_scope("discriminator") as scope:
             if reuse:
                 scope.reuse_variables()
 
+            # concatenate image column with image in order to feed image column with image to first layer of discriminator
+            if self.model_type == self.cWGAN:
+                v_snip = tf.reshape(v, [self.batch_size, 28,1,1])
+                image= tf.concat(axis=2, values=[image, v_snip])
+                
             if not self.y_dim:
                 h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
                 h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim * 2, name='d_h1_conv')))
@@ -526,11 +555,16 @@ class UnifiedDCGAN(object):
     ## GENERATOR
     ############################################################################
     
-    def generator(self, z, y=None):
+    def generator(self, z, y=None, v=None):
         """Defines the G network structure.
         """
         with tf.variable_scope("generator") as scope:
 
+            # concatenate image column to latent variable
+            if self.model_type == self.cWGAN:
+                v_snip = tf.reshape(v, [self.batch_size, 28])
+                z= tf.concat(axis=1, values=[z, v_snip])
+            
             if not self.y_dim:
                 s_h, s_w = self.output_height, self.output_width
                 s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
@@ -594,12 +628,17 @@ class UnifiedDCGAN(object):
     ## SAMPLER
     ############################################################################
     
-    def sampler(self, z, y=None):
+    def sampler(self, z, y=None, v=None):
         """TODO: merge this with self.generator()?
         """
         with tf.variable_scope("generator") as scope:
             scope.reuse_variables()
 
+            # concatenate image column to latent variable
+            if self.model_type == self.cWGAN:
+                v_snip = tf.reshape(v, [self.batch_size, 28])
+                z= tf.concat(axis=1, values=[z, v_snip])
+                
             if not self.y_dim:
                 s_h, s_w = self.output_height, self.output_width
                 s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)

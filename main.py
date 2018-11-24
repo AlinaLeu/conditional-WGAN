@@ -3,6 +3,7 @@ Recommended configs:
 
 --model_type=GAN --learning_rate=0.0002
 --model_type=WGAN --learning_rate=0.00005 --beta1=0.9
+--model_type=cWGAN --learning_rate=0.00005 --beta1=0.9
 --model_type=WGAN_GP --learning_rate=0.0001 --beta1=0.5 --beta2=0.9
 """
 
@@ -13,6 +14,7 @@ import tensorflow as tf
 
 from model import UnifiedDCGAN
 from utils import show_all_variables
+
 
 
 # define tensorflow-flags as flags.DEFINE_<type>("<name>", "<default>", "<description>")
@@ -35,6 +37,7 @@ flags.DEFINE_string("checkpoint_dir", "checkpoint", "Directory name to save the 
 flags.DEFINE_string("sample_dir", "samples", "Directory name to save the image samples [samples]")
 flags.DEFINE_boolean("train", False, "True for training, False for testing [False]")
 flags.DEFINE_boolean("crop", False, "True for training, False for testing [False]")
+flags.DEFINE_boolean("v_exist", False, "snippet of image is used [False]")
 
 # create a flags instance
 FLAGS = flags.FLAGS
@@ -81,7 +84,8 @@ def main(_):
                 input_fname_pattern=FLAGS.input_fname_pattern,
                 crop=FLAGS.crop,
                 checkpoint_dir=FLAGS.checkpoint_dir,
-                sample_dir=FLAGS.sample_dir)
+                sample_dir=FLAGS.sample_dir,
+                v_exist=FLAGS.v_exist)
         else:
             model = UnifiedDCGAN(
                 sess,
@@ -97,7 +101,8 @@ def main(_):
                 input_fname_pattern=FLAGS.input_fname_pattern,
                 crop=FLAGS.crop,
                 checkpoint_dir=FLAGS.checkpoint_dir,
-                sample_dir=FLAGS.sample_dir)
+                sample_dir=FLAGS.sample_dir,
+                v_exist=False)
 
         # start show_all_variables
         show_all_variables() # imported from utils.py
