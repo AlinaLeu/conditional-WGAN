@@ -133,6 +133,6 @@ def make_gif(img_path, img_fname_pattern='*.png'):
     from imageio import imread, mimsave
     from glob import glob
     file_names = sorted(glob(os.path.join(img_path, img_fname_pattern)))
-    print file_names
+    print(file_names)
     images = [imread(fn) for fn in file_names]
     mimsave(os.path.join(img_path, "merged.gif"), images, duration=0.3)
