@@ -14,7 +14,7 @@ import tensorflow as tf
 
 from model import UnifiedDCGAN
 from utils import show_all_variables
-
+import sys
 
 
 # define tensorflow-flags as flags.DEFINE_<type>("<name>", "<default>", "<description>")
@@ -37,7 +37,7 @@ flags.DEFINE_string("checkpoint_dir", "checkpoint", "Directory name to save the 
 flags.DEFINE_string("sample_dir", "samples", "Directory name to save the image samples [samples]")
 flags.DEFINE_boolean("train", False, "True for training, False for testing [False]")
 flags.DEFINE_boolean("crop", False, "True for training, False for testing [False]")
-flags.DEFINE_boolean("v_exist", False, "snippet of image is used [False]")
+flags.DEFINE_string("v", "[[10]]", "snippet of image is used [[10]]")
 
 # create a flags instance
 FLAGS = flags.FLAGS
@@ -85,7 +85,7 @@ def main(_):
                 crop=FLAGS.crop,
                 checkpoint_dir=FLAGS.checkpoint_dir,
                 sample_dir=FLAGS.sample_dir,
-                v_exist=FLAGS.v_exist)
+                v=FLAGS.v)
         else:
             model = UnifiedDCGAN(
                 sess,
@@ -102,7 +102,7 @@ def main(_):
                 crop=FLAGS.crop,
                 checkpoint_dir=FLAGS.checkpoint_dir,
                 sample_dir=FLAGS.sample_dir,
-                v_exist=False)
+                v=FLAGS.v)
 
         # start show_all_variables
         show_all_variables() # imported from utils.py

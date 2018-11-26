@@ -5,6 +5,7 @@ import os
 import re
 import time
 from glob import glob
+import ast
 
 import numpy as np
 import tensorflow as tf
@@ -35,7 +36,7 @@ class UnifiedDCGAN(object):
                  d_clip_limit=0.01, d_iter=5, gp_lambda=10.,
                  l1_regularizer_scale=None,
                  dataset_name='default', input_fname_pattern='*.png',
-                 checkpoint_dir=None, sample_dir=None, v_exist=False):
+                 checkpoint_dir=None, sample_dir=None, v='[[10]]'):
         """
         Construct a model object.
 
@@ -71,7 +72,7 @@ class UnifiedDCGAN(object):
             checkpoint_dir (str): Folder name to save the model checkpoints.
             sample_dir (str): Folder name to save the sample images.
             
-            v_exist(bool): conditional Wasserstein GAN with snippet v.
+            v (str): columns of conditional variable in cWGAN.
         """
         
         # raise error if given model-type is unknown
@@ -93,7 +94,16 @@ class UnifiedDCGAN(object):
         self.y_dim = y_dim
         self.z_dim = z_dim
 
-        self.v_exist = v_exist
+        print(v)
+        v2=[]
+        v1=ast.literal_eval(v)
+        for arr in v1:
+            if len(arr)==1: v2=v2+arr
+            elif len(arr)==2: v2=v2+list(range(arr[0],arr[1]))
+            else: raise Exception("[!] invalid format of conditional variable")
+        self.v_col=v2
+        print(v1)
+        print(v2)
 
         self.gf_dim = gf_dim
         self.df_dim = df_dim
@@ -135,8 +145,11 @@ class UnifiedDCGAN(object):
         # for mnist data use the function
         if self.dataset_name == 'mnist':
             self.data_X, self.data_y = load_mnist(self.y_dim) # load_mnist() imported from utils.py
-            self.data_v=self.data_X[:,:,11] # extract 10th column of each image
+            a=10
+            self.data_v=self.data_X[:,:,self.v_col] # extract columns of each image
             self.c_dim = self.data_X[0].shape[-1] # self.data_X[0] is first image, .shape[-1] is the dim of each element of the image
+            self.v_dim = self.data_v.shape[2]
+            print("Dim v: ",self.data_v.shape)
         else:
             self.data = glob(os.path.join("./data", self.dataset_name, self.input_fname_pattern))
             imreadImg = imread(self.data[0])
@@ -161,8 +174,8 @@ class UnifiedDCGAN(object):
             self.y = None
 
         # if a conditional variable is used insert placeholder
-        if self.v_exist:
-            self.v = tf.placeholder(tf.float32, [self.batch_size, 28,1], name='v')
+        if self.model_type == self.cWGAN:
+            self.v = tf.placeholder(tf.float32, [self.batch_size, 28,self.v_dim,1], name='v')
         else:
             self.v = None
             
@@ -288,7 +301,7 @@ class UnifiedDCGAN(object):
                 batch_images = self.data_X[idx * config.batch_size:(idx + 1) * config.batch_size]
                 batch_labels = self.data_y[idx * config.batch_size:(idx + 1) * config.batch_size]
                 batch_snippets = self.data_v[idx * config.batch_size:(idx + 1) * config.batch_size]
-
+                
                 d_train_feed_dict = {self.inputs: batch_images, self.z: batch_z, self.y: batch_labels,}
                 
                 if self.model_type == self.cWGAN:
@@ -444,6 +457,7 @@ class UnifiedDCGAN(object):
         sample_every_step = int(config.max_iter // 20)
 
         start_time = time.time()
+        
         could_load, checkpoint_counter = self.load()
 
         counter = 1  # Count how many batches we have processed.
@@ -456,6 +470,7 @@ class UnifiedDCGAN(object):
         else:
             print(" [!] Load failed...")
 
+        
         ##############################
         # Start training!
 
@@ -521,7 +536,7 @@ class UnifiedDCGAN(object):
 
             # concatenate image column with image in order to feed image column with image to first layer of discriminator
             if self.model_type == self.cWGAN:
-                v_snip = tf.reshape(v, [self.batch_size, 28,1,1])
+                v_snip = tf.reshape(v, [self.batch_size, 28,self.v_dim,1])
                 image= tf.concat(axis=2, values=[image, v_snip])
                 
             if not self.y_dim:
@@ -562,9 +577,9 @@ class UnifiedDCGAN(object):
 
             # concatenate image column to latent variable
             if self.model_type == self.cWGAN:
-                v_snip = tf.reshape(v, [self.batch_size, 28])
+                v_snip = tf.reshape(v, [self.batch_size, 28*self.v_dim])
                 z= tf.concat(axis=1, values=[z, v_snip])
-            
+                
             if not self.y_dim:
                 s_h, s_w = self.output_height, self.output_width
                 s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
@@ -605,9 +620,9 @@ class UnifiedDCGAN(object):
                 # yb = tf.expand_dims(tf.expand_dims(y, 1),2)
                 yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
                 z = concat([z, y], 1)
-
+                
                 h0 = tf.nn.relu(
-                    self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
+                    self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin',with_w=False)))
                 h0 = concat([h0, y], 1)
 
                 h1 = tf.nn.relu(self.g_bn1(
@@ -636,7 +651,7 @@ class UnifiedDCGAN(object):
 
             # concatenate image column to latent variable
             if self.model_type == self.cWGAN:
-                v_snip = tf.reshape(v, [self.batch_size, 28])
+                v_snip = tf.reshape(v, [self.batch_size, 28*self.v_dim])
                 z= tf.concat(axis=1, values=[z, v_snip])
                 
             if not self.y_dim:
