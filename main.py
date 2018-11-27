@@ -112,7 +112,7 @@ def main(_):
             model.train(FLAGS)
         else:
             # prevent testing untrained model
-            if not model.load(FLAGS.checkpoint_dir)[0]:
+            if not model.load()[0]:
                 raise Exception("[!] Train a model first, then run test mode")
 
 # checks if file is executed in shell, if so parses arguments and executes main(_)

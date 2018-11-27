@@ -91,16 +91,25 @@ def image_manifold_size(num_images):
     return manifold_h, manifold_w
 
 
-def load_mnist(y_dim):
+def load_mnist(y_dim, train):
     data_dir = "./data/mnist"
 
-    fd = open(os.path.join(data_dir, 'train-images-idx3-ubyte'))
-    loaded = np.fromfile(file=fd, dtype=np.uint8)
-    X = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float)
+    if train:
+        fd = open(os.path.join(data_dir, 'train-images-idx3-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        X = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float)
 
-    fd = open(os.path.join(data_dir, 'train-labels-idx1-ubyte'))
-    loaded = np.fromfile(file=fd, dtype=np.uint8)
-    y = loaded[8:].reshape((60000)).astype(np.int)
+        fd = open(os.path.join(data_dir, 'train-labels-idx1-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        y = loaded[8:].reshape((60000)).astype(np.int)
+    else:
+        fd = open(os.path.join(data_dir, 't10k-images-idx3-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        X = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
+
+        fd = open(os.path.join(data_dir, 't10k-labels-idx1-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        y = loaded[8:].reshape((10000)).astype(np.int)
 
     seed = 547
     np.random.seed(seed)

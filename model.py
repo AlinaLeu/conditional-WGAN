@@ -94,7 +94,6 @@ class UnifiedDCGAN(object):
         self.y_dim = y_dim
         self.z_dim = z_dim
 
-        print(v)
         v2=[]
         v1=ast.literal_eval(v)
         for arr in v1:
@@ -102,9 +101,7 @@ class UnifiedDCGAN(object):
             elif len(arr)==2: v2=v2+list(range(arr[0],arr[1]))
             else: raise Exception("[!] invalid format of conditional variable")
         self.v_col=v2
-        print(v1)
-        print(v2)
-
+        
         self.gf_dim = gf_dim
         self.df_dim = df_dim
 
@@ -144,8 +141,7 @@ class UnifiedDCGAN(object):
         """
         # for mnist data use the function
         if self.dataset_name == 'mnist':
-            self.data_X, self.data_y = load_mnist(self.y_dim) # load_mnist() imported from utils.py
-            a=10
+            self.data_X, self.data_y = load_mnist(self.y_dim, train=True) # load_mnist() imported from utils.py
             self.data_v=self.data_X[:,:,self.v_col] # extract columns of each image
             self.c_dim = self.data_X[0].shape[-1] # self.data_X[0] is first image, .shape[-1] is the dim of each element of the image
             self.v_dim = self.data_v.shape[2]
@@ -517,6 +513,7 @@ class UnifiedDCGAN(object):
 
                 image_path = os.path.join(self.sample_dir, "train_{:02d}_{:04d}.png".format(epoch, step))
                 save_images(samples, image_manifold_size(samples.shape[0]), image_path)
+                
                 print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss))
 
                 # Save the model.
@@ -717,6 +714,22 @@ class UnifiedDCGAN(object):
         model_name = self.model_type + ".model"
         model_path = os.path.join(self.checkpoint_dir, model_name)
         self.saver.save(self.sess, model_path, global_step=step)
+    
+    def test(self):
+        if self.dataset_name == 'mnist':
+            test_X, test_y = load_mnist(self.y_dim, train=False) 
+            test_v=test_X[:,:,self.v_col]
+
+            sample_feed_dict = {
+                self.z: np.random.uniform(-1, 1, size=(self.sample_num, self.z_dim)),
+                self.inputs: test_X[0:self.sample_num],
+                self.y: test_y[0:self.sample_num],
+                self.v: test_v[0:self.sample_num]
+            }
+            samples, d_loss, g_loss = self.sess.run( [self.sampler, self.d_loss, self.g_loss], feed_dict=sample_feed_dict)
+            image_path = os.path.join(self.sample_dir,  "test.png")
+            save_images(samples, image_manifold_size(samples.shape[0]), image_path)
+
 
     def load(self):
         print(" [*] Reading checkpoints...")
@@ -726,6 +739,10 @@ class UnifiedDCGAN(object):
             self.saver.restore(self.sess, os.path.join(self.checkpoint_dir, ckpt_name))
             counter = int(next(re.finditer("(\d+)(?!.*\d)", ckpt_name)).group(0))
             print(" [*] Success to read {}".format(ckpt_name))
+            
+            if self.model_type == self.cWGAN:
+                self.test()
+            
             return True, counter
         else:
             print(" [*] Failed to find a checkpoint")
